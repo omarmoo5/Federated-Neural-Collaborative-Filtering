@@ -3,22 +3,39 @@ import torch
 class NeuralCollaborativeFiltering(torch.nn.Module):
     def __init__(self, user_num, item_num, predictive_factor=32):
         super(NeuralCollaborativeFiltering, self).__init__()
+        # initialize the layers of the model
+
+        """"
+        Initialize user latent vectors for MLP and GMF and user latent vectors for MLP and GMF
+        Num_embeddings: This represents the size of the dictionary present in the embeddings, and it is represented in integers.
+        Embedding_dim: This represents the size of each vector present in the embeddings, which is represented in integers.
+        """""
         self.mlp_user_embeddings = torch.nn.Embedding(num_embeddings=user_num, embedding_dim=2*predictive_factor)
         self.mlp_item_embeddings = torch.nn.Embedding(num_embeddings=item_num, embedding_dim=2*predictive_factor)
         self.gmf_user_embeddings = torch.nn.Embedding(num_embeddings=user_num, embedding_dim=2*predictive_factor)
         self.gmf_item_embeddings = torch.nn.Embedding(num_embeddings=item_num, embedding_dim=2*predictive_factor)
+
+        """" linear Layers of MLP Model which we will pass the concatenation of the user and item latent vectors to"""
         self.mlp = torch.nn.Sequential(torch.nn.Linear(4*predictive_factor, 2*predictive_factor), 
-            torch.nn.ReLU(), 
+            torch.nn.ReLU(),
             torch.nn.Linear(2*predictive_factor, predictive_factor), 
             torch.nn.ReLU(),
             torch.nn.Linear(predictive_factor, predictive_factor//2), 
             torch.nn.ReLU()
             )
+            
+        """Linear layer of GMF that we will feed with the mul(user_emb, item_emb), it will output the predicted 
+        scores from GMF """
         self.gmf_out = torch.nn.Linear(2*predictive_factor, 1)
+        # Initialize the parameters
         self.gmf_out.weight = torch.nn.Parameter(torch.ones(1, 2*predictive_factor))
+        """Linear layer of MLP """
         self.mlp_out = torch.nn.Linear(predictive_factor//2, 1)
+        """ Will contain the output of the GMF concatenated with MLP"""
         self.output_logits = torch.nn.Linear(predictive_factor, 1)
+        """ percentage of each model in the final output"""
         self.model_blending = 0.5           # alpha parameter, equation 13 in the paper
+
         self.initialize_weights()
         self.join_output_weights()
 
@@ -30,6 +47,8 @@ class NeuralCollaborativeFiltering(torch.nn.Module):
         for layer in self.mlp:
             if isinstance(layer, torch.nn.Linear):
                 torch.nn.init.xavier_uniform_(layer.weight)
+
+        # Fills the input layer parameters with ones
         torch.nn.init.kaiming_uniform_(self.gmf_out.weight, a=1)
         torch.nn.init.kaiming_uniform_(self.mlp_out.weight, a=1)
 
