@@ -62,7 +62,6 @@ def federate(utils):
             server_new_dict[k] += client_dict[k]
     for k in server_new_dict.keys():
         server_new_dict[k] = server_new_dict[k] / n
-    print(server_new_dict.keys())
     server_model.load_state_dict(server_new_dict)
     utils.save_federated_model(server_model)
 
@@ -81,7 +80,7 @@ class FederatedNCF:
         self.local_epochs = local_epochs
         self.batch_size = batch_size
         self.clients = self.generate_clients()
-        self.ncf_optimizers = [torch.optim.Adam(client.ncf.parameters(), lr=5e-4) for client in self.clients]
+        self.ncf_optimizers = [torch.optim.Adam(client.ncf.parameters(), lr=0.001) for client in self.clients]
         self.utils = Utils(self.num_clients)
         self.hrs = []
         self.ndcg = []
@@ -138,36 +137,36 @@ class FederatedNCF:
             self.extract_item_models()
             federate(self.utils)
 
-        epochs = range(1, self.aggregation_epochs+1)
+        epochs = range(1, self.aggregation_epochs + 1)
 
-        hrs = [sum(i)/len(i) for i in self.hrs]
+        hrs = [sum(i) / len(i) for i in self.hrs]
         plt.plot(epochs, hrs)
         plt.xlabel('epochs')
         plt.ylabel('HR@10')
         plt.show()
 
-        loss = [sum(i)/len(i) for i in self.loss]
+        loss = [sum(i) / len(i) for i in self.loss]
         plt.plot(epochs, loss)
         plt.xlabel('epochs')
         plt.ylabel('Mean Square Error')
         plt.show()
 
-        ndcg = [sum(i)/len(i) for i in self.ndcg]
+        ndcg = [sum(i) / len(i) for i in self.ndcg]
         plt.plot(epochs, ndcg)
         plt.xlabel('epochs')
         plt.ylabel('NDCG@10')
         plt.show()
 
 
-
 if __name__ == '__main__':
     dataloader = MovielensDatasetLoader()
     fncf = FederatedNCF(dataloader.ratings,
-                        num_clients=50,
-                        user_per_client_range=[1, 10],
+                        num_clients=120,
+                        user_per_client_range=[1, 10],  # Why ?
                         mode="ncf",
-                        aggregation_epochs=50,
-                        local_epochs=10,
-                        batch_size=128
+                        aggregation_epochs=400,
+                        local_epochs=2,
+                        batch_size=128,
+                        # latent_dim=12
                         )
     fncf.train()
