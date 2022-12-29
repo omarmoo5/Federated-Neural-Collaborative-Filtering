@@ -4,7 +4,7 @@ import random
 import matplotlib.pyplot as plt
 import torch
 from tqdm import tqdm
-
+import numpy as np
 from dataloader import MovielensDatasetLoader
 from server_model import ServerNeuralCollaborativeFiltering
 from train_single import NCFTrainer
@@ -137,21 +137,21 @@ class FederatedNCF:
             self.extract_item_models()
             federate(self.utils)
 
-        epochs = range(1, self.aggregation_epochs + 1)
+        epochs = np.arange(1, self.aggregation_epochs + 1)
 
-        hrs = [sum(i) / len(i) for i in self.hrs]
+        hrs = np.mean(self.hrs, axis=1)
         plt.plot(epochs, hrs)
         plt.xlabel('epochs')
         plt.ylabel('HR@10')
         plt.show()
 
-        loss = [sum(i) / len(i) for i in self.loss]
+        loss = np.mean(self.loss, axis=1)
         plt.plot(epochs, loss)
         plt.xlabel('epochs')
-        plt.ylabel('Mean Square Error')
+        plt.ylabel('MSE')
         plt.show()
 
-        ndcg = [sum(i) / len(i) for i in self.ndcg]
+        ndcg = np.mean(self.ndcg, axis=1)
         plt.plot(epochs, ndcg)
         plt.xlabel('epochs')
         plt.ylabel('NDCG@10')
