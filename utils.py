@@ -1,0 +1,59 @@
+import copy
+
+import torch
+
+
+class Utils:
+    def __init__(self, num_clients, local_path="./models/local_items/", server_path="./models/central/"):
+        self.epoch = 0
+        self.num_clients = num_clients
+        self.local_path = local_path
+        self.server_path = server_path
+
+    @staticmethod
+    def load_pytorch_client_model(path):
+        # Load a ScriptModule or ScriptFunction previously saved with torch.jit.save
+        return torch.jit.load(path)
+
+    def get_user_models(self, loader):
+        # get clients models from "./models/local_items/"
+        models = []
+        for client_id in range(self.num_clients):
+            models.append({'model': loader(self.local_path + "dp" + str(client_id) + ".pt")})
+        return models
+
+    def get_previous_federated_model(self):
+        self.epoch += 1
+        return torch.jit.load(self.server_path + "server" + str(self.epoch - 1) + ".pt")
+
+    def save_federated_model(self, model):
+        torch.jit.save(model, self.server_path + "server" + str(self.epoch) + ".pt")
+
+    # after each epoch the framework saves the result in "models/server"
+
+    def federate(self):
+        client_models = self.get_user_models(self.load_pytorch_client_model)
+        server_model = self.get_previous_federated_model()  # get the last model saved by the last epoch
+        if len(client_models) == 0:
+            self.save_federated_model(server_model)  # if there's no models for clients then save the last readed model
+            return
+        n = len(client_models)
+
+        # deep copy :a copy of the object is copied into another object.
+        # It means that any changes made to a copy of the object do not reflect in the original object.
+        # Access the model and optimizer state_dict
+
+        # model 'mlp_item_embeddings.weight', 'gmf_item_embeddings.weight', 'mlp.0.weight' , 'mlp.0.bias',
+        # 'mlp.2.weight', 'mlp.2.bias' , 'mlp.4.weight', 'mlp.4.bias' , 'gmf_out.weight', 'gmf_out.bias',
+        # 'mlp_out.weight', 'mlp_out.bias', 'output_logits.weight', 'output_logits.bias'
+
+        # agg function (server weights+client weights)/#clients
+        server_new_dict = copy.deepcopy(client_models[0]['model'].state_dict())
+        for i in range(1, len(client_models)):
+            client_dict = client_models[i]['model'].state_dict()
+            for k in client_dict.keys():
+                server_new_dict[k] += client_dict[k]
+        for k in server_new_dict.keys():
+            server_new_dict[k] = server_new_dict[k] / n
+        server_model.load_state_dict(server_new_dict)
+        self.save_federated_model(server_model)
