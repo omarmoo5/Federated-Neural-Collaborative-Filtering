@@ -2,37 +2,44 @@ import torch
 
 
 class ServerNeuralCollaborativeFiltering(torch.nn.Module):
-    def __init__(self, item_num, predictive_factor=32):
+    def __init__(self, item_num, predictive_factor=12):
+        """
+        Initializes the layers of the model.
+
+        Args:
+            item_num (int): The number of items in the dataset.
+            predictive_factor (int, optional): The latent dimension of the model. Default is 12.
+        """
         super(ServerNeuralCollaborativeFiltering, self).__init__()
-        self.mlp_item_embeddings = torch.nn.Embedding(num_embeddings=item_num, embedding_dim=2 * predictive_factor)
-        self.gmf_item_embeddings = torch.nn.Embedding(num_embeddings=item_num, embedding_dim=2 * predictive_factor)
-        self.mlp = torch.nn.Sequential(torch.nn.Linear(4 * predictive_factor, 2 * predictive_factor),
-                                       torch.nn.ReLU(),
-                                       torch.nn.Linear(2 * predictive_factor, predictive_factor),
-                                       torch.nn.ReLU(),
-                                       torch.nn.Linear(predictive_factor, predictive_factor // 2),
-                                       torch.nn.ReLU()
-                                       )
-        self.gmf_out = torch.nn.Linear(2 * predictive_factor, 1)
-        self.gmf_out.weight = torch.nn.Parameter(torch.ones(1, 2 * predictive_factor))
-        self.mlp_out = torch.nn.Linear(predictive_factor // 2, 1)
+        self.mlp_item_embeddings = torch.nn.Embedding(num_embeddings=item_num, embedding_dim=predictive_factor)
+        self.gmf_item_embeddings = torch.nn.Embedding(num_embeddings=item_num, embedding_dim=predictive_factor)
+        self.gmf_out = torch.nn.Linear(predictive_factor, 1)
+        self.gmf_out.weight = torch.nn.Parameter(torch.ones(1, predictive_factor))
+
+        # Linear layers of MLP model that we will pass the concatenation of the user and item latent vectors to
+        self.mlp = torch.nn.Sequential(
+            torch.nn.Linear(2 * predictive_factor, 48), torch.nn.ReLU(),
+            torch.nn.Linear(48, 24), torch.nn.ReLU(),
+            torch.nn.Linear(24, 12), torch.nn.ReLU(),
+            torch.nn.Linear(12, 6), torch.nn.ReLU()
+        )
+        self.mlp_out = torch.nn.Linear(6, 1)
+
         self.output_logits = torch.nn.Linear(predictive_factor, 1)
         self.model_blending = 0.5  # alpha parameter, equation 13 in the paper
         self.initialize_weights()
         self.join_output_weights()
 
     def initialize_weights(self):
-        torch.nn.init.normal_(self.mlp_item_embeddings.weight, std=0.01)
-        torch.nn.init.normal_(self.gmf_item_embeddings.weight, std=0.01)
-        for layer in self.mlp:
-            if isinstance(layer, torch.nn.Linear):
-                torch.nn.init.xavier_uniform_(layer.weight)
-        torch.nn.init.kaiming_uniform_(self.gmf_out.weight, a=1)
-        torch.nn.init.kaiming_uniform_(self.mlp_out.weight, a=1)
+        torch.nn.init.xavier_uniform_(self.mlp_item_embeddings.weight)
+        torch.nn.init.xavier_uniform_(self.gmf_item_embeddings.weight)
+        torch.nn.init.xavier_uniform_(self.gmf_out.weight)
+        torch.nn.init.xavier_uniform_(self.mlp_out.weight)
+        torch.nn.init.xavier_uniform_(self.output_logits.weight)
 
     def layer_setter(self, model, model_copy):
-        for m, mc in zip(model.parameters(), model_copy.parameters()):
-            mc.data[:] = m.data[:]
+        model_state_dict = model.state_dict()
+        model_copy.load_state_dict(model_state_dict)
 
     def set_weights(self, model):
         self.layer_setter(model.mlp_item_embeddings, self.mlp_item_embeddings)

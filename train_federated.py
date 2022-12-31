@@ -1,74 +1,27 @@
-import copy
 import random
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from tqdm import tqdm
-import numpy as np
+
 from dataloader import MovielensDatasetLoader
 from server_model import ServerNeuralCollaborativeFiltering
 from train_single import NCFTrainer
-
-
-class Utils:
-    def __init__(self, num_clients, local_path="./models/local_items/", server_path="./models/central/"):
-        self.epoch = 0
-        self.num_clients = num_clients
-        self.local_path = local_path
-        self.server_path = server_path
-
-    def load_pytorch_client_model(self, path):
-        # Load a ScriptModule or ScriptFunction previously saved with torch.jit.save
-        return torch.jit.load(path)
-
-    def get_user_models(self, loader):
-        # get clients models from "./models/local_items/"
-        models = []
-        for client_id in range(self.num_clients):
-            models.append({'model': loader(self.local_path + "dp" + str(client_id) + ".pt")})
-        return models
-
-    def get_previous_federated_model(self):
-        self.epoch += 1
-        return torch.jit.load(self.server_path + "server" + str(self.epoch - 1) + ".pt")
-
-    def save_federated_model(self, model):
-        torch.jit.save(model, self.server_path + "server" + str(self.epoch) + ".pt")
-
-    # after each epoch the framework saves the result in "models/server"
-
-
-def federate(utils):
-    client_models = utils.get_user_models(utils.load_pytorch_client_model)
-    server_model = utils.get_previous_federated_model()  # get the last model saved by the last epoch
-    if len(client_models) == 0:
-        utils.save_federated_model(server_model)  # if there's no models for clients then save the last readed model
-        return
-    n = len(client_models)
-
-    # deep copy :a copy of the object is copied into another object.
-    # It means that any changes made to a copy of the object do not reflect in the original object.
-    # Access the model and optimizer state_dict
-
-    # model 'mlp_item_embeddings.weight', 'gmf_item_embeddings.weight', 'mlp.0.weight'
-    # , 'mlp.0.bias', 'mlp.2.weight', 'mlp.2.bias' , 'mlp.4.weight', 'mlp.4.bias'
-    # , 'gmf_out.weight', 'gmf_out.bias', 'mlp_out.weight', 'mlp_out.bias', 'output_logits.weight', 'output_logits.bias'
-
-    # agg function (server weights+client weights)/#clients
-    server_new_dict = copy.deepcopy(client_models[0]['model'].state_dict())
-    for i in range(1, len(client_models)):
-        client_dict = client_models[i]['model'].state_dict()
-        for k in client_dict.keys():
-            server_new_dict[k] += client_dict[k]
-    for k in server_new_dict.keys():
-        server_new_dict[k] = server_new_dict[k] / n
-    server_model.load_state_dict(server_new_dict)
-    utils.save_federated_model(server_model)
+from utils import Utils
 
 
 class FederatedNCF:
-    def __init__(self, ui_matrix, num_clients=50, user_per_client_range=[1, 5], mode="ncf", aggregation_epochs=50,
-                 local_epochs=10, batch_size=128, latent_dim=32, seed=0):
+    def __init__(self,
+                 ui_matrix,
+                 num_clients=50,
+                 user_per_client_range=(1, 5),
+                 mode="ncf",
+                 aggregation_epochs=50,
+                 local_epochs=10,
+                 batch_size=128,
+                 latent_dim=32,
+                 seed=0):
         random.seed(seed)
         self.ui_matrix = ui_matrix
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -91,12 +44,14 @@ class FederatedNCF:
         clients = []
         for i in range(self.num_clients):
             users = random.randint(self.user_per_client_range[0], self.user_per_client_range[1])
-            clients.append(NCFTrainer(self.ui_matrix[start_index:start_index + users], epochs=self.local_epochs,
-                                      batch_size=self.batch_size))
+            clients.append(NCFTrainer(ui_matrix=self.ui_matrix[start_index:start_index + users],
+                                      epochs=self.local_epochs,
+                                      batch_size=self.batch_size,
+                                      latent_dim=self.latent_dim))
             start_index += users
         return clients
 
-    def single_round(self, epoch=0, first_time=False):
+    def single_round(self, epoch=0):
         single_round_results = {key: [] for key in ["num_users", "loss", "hit_ratio@10", "ndcg@10"]}
         bar = tqdm(enumerate(self.clients), total=self.num_clients)
         for client_id, client in bar:
@@ -123,50 +78,49 @@ class FederatedNCF:
             torch.jit.save(item_model, "./models/local_items/dp" + str(client_id) + ".pt")
 
     def train(self):
-        first_time = True
         server_model = ServerNeuralCollaborativeFiltering(item_num=self.ui_matrix.shape[1],
                                                           predictive_factor=self.latent_dim)
         server_model = torch.jit.script(server_model.to(torch.device("cpu")))
         torch.jit.save(server_model, "./models/central/server" + str(0) + ".pt")
         for epoch in range(self.aggregation_epochs):
-            server_model = torch.jit.load("./models/central/server" + str(epoch) + ".pt", map_location=self.device)
+            server_model = torch.jit.load("./models/central/server" + str(epoch) + ".pt",
+                                          map_location=self.device)
             _ = [client.ncf.to(self.device) for client in self.clients]
             _ = [client.ncf.load_server_weights(server_model) for client in self.clients]
-            self.single_round(epoch=epoch, first_time=first_time)
-            first_time = False
+            self.single_round(epoch=epoch)
             self.extract_item_models()
-            federate(self.utils)
+            self.utils.federate()
 
         epochs = np.arange(1, self.aggregation_epochs + 1)
-
         hrs = np.mean(self.hrs, axis=1)
-        plt.plot(epochs, hrs)
-        plt.xlabel('epochs')
-        plt.ylabel('HR@10')
-        plt.show()
-
         loss = np.mean(self.loss, axis=1)
-        plt.plot(epochs, loss)
-        plt.xlabel('epochs')
-        plt.ylabel('MSE')
-        plt.show()
-
         ndcg = np.mean(self.ndcg, axis=1)
-        plt.plot(epochs, ndcg)
-        plt.xlabel('epochs')
-        plt.ylabel('NDCG@10')
-        plt.show()
 
+        fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+
+        axs[0].plot(epochs, hrs)
+        axs[0].set_xlabel('epochs')
+        axs[0].set_ylabel('HR@10')
+
+        axs[1].plot(epochs, loss)
+        axs[1].set_xlabel('epochs')
+        axs[1].set_ylabel('MSE')
+
+        axs[2].plot(epochs, ndcg)
+        axs[2].set_xlabel('epochs')
+        axs[2].set_ylabel('NDCG@10')
+
+        plt.show()
 
 if __name__ == '__main__':
     dataloader = MovielensDatasetLoader()
-    fncf = FederatedNCF(dataloader.ratings,
+    fncf = FederatedNCF(ui_matrix=dataloader.ratings,
                         num_clients=120,
-                        user_per_client_range=[1, 10],  # Why ?
+                        user_per_client_range=[1, 10],
                         mode="ncf",
-                        aggregation_epochs=400,
+                        aggregation_epochs=50,
                         local_epochs=2,
                         batch_size=128,
-                        # latent_dim=12
+                        latent_dim=12,
                         )
     fncf.train()
