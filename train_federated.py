@@ -8,7 +8,7 @@ from tqdm import tqdm
 from dataloader import MovielensDatasetLoader
 from server_model import ServerNeuralCollaborativeFiltering
 from train_single import NCFTrainer
-from utils import Utils
+from utils import Utils, seed_everything
 
 
 class FederatedNCF:
@@ -22,7 +22,8 @@ class FederatedNCF:
                  batch_size=128,
                  latent_dim=32,
                  seed=0):
-        random.seed(seed)
+        self.seed = seed
+        seed_everything(seed)
         self.ui_matrix = ui_matrix
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.num_clients = num_clients
@@ -109,18 +110,28 @@ class FederatedNCF:
         axs[2].plot(epochs, ndcg)
         axs[2].set_xlabel('epochs')
         axs[2].set_ylabel('NDCG@10')
+        fig.suptitle(f'Seed = {self.seed}', fontsize=30)
 
         plt.show()
 
+
 if __name__ == '__main__':
     dataloader = MovielensDatasetLoader()
-    fncf = FederatedNCF(ui_matrix=dataloader.ratings,
-                        num_clients=120,
-                        user_per_client_range=[1, 10],
-                        mode="ncf",
-                        aggregation_epochs=50,
-                        local_epochs=2,
-                        batch_size=128,
-                        latent_dim=12,
-                        )
-    fncf.train()
+
+    seeds = {117623077, 204110176}
+    # 187372311, 129995678,
+    # 6155814, 22612812, 61168821,
+    # 21228945, 146764631, 94412880,
+    # }
+    for s in seeds:
+        fncf = FederatedNCF(ui_matrix=dataloader.ratings,
+                            num_clients=120,
+                            user_per_client_range=[1, 10],
+                            mode="ncf",
+                            aggregation_epochs=300,
+                            local_epochs=2,
+                            batch_size=128,
+                            latent_dim=12,
+                            seed=s
+                            )
+        fncf.train()
