@@ -124,7 +124,7 @@ class NCFTrainer:
 
 if __name__ == '__main__':
     seed_everything(0)
-    dataloader = MovielensDatasetLoader()
+    dataloader = MovielensDatasetLoader(thresh=1)
     users = 50
     trainer = NCFTrainer(dataloader.ratings[:users], epochs=20, batch_size=128)
     ncf_optimizer = torch.optim.Adam(trainer.ncf.parameters(), lr=5e-4)

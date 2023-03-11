@@ -111,7 +111,7 @@ if __name__ == '__main__':
                             num_clients=120,
                             user_per_client_range=[1, 10],
                             mode="ncf",
-                            aggregation_epochs=100,
+                            aggregation_epochs=400,
                             local_epochs=2,
                             batch_size=128,
                             latent_dim=12,
