@@ -1,9 +1,35 @@
 import copy
+import datetime
 import os
 import random
 
 import numpy as np
 import torch
+from matplotlib import pyplot as plt
+
+
+def plot_progress(progress, title=None, loss="loss", save=True):
+    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+    epochs = np.arange(1, len(progress["loss"]) + 1)
+
+    axs[0].plot(epochs, progress["hit_ratio@10"])
+    axs[0].set_xlabel('epochs')
+    axs[0].set_ylabel('HR@10')
+
+    axs[1].plot(epochs, progress["loss"])
+    axs[1].set_xlabel('epochs')
+    axs[1].set_ylabel(loss)
+
+    axs[2].plot(epochs, progress["ndcg@10"])
+    axs[2].set_xlabel('epochs')
+    axs[2].set_ylabel('ndcg@10')
+
+    if title:
+        fig.suptitle(title, fontsize=30)
+    if save:
+        plt.savefig(f'{datetime.datetime.now()}.png')
+
+    plt.show()
 
 
 def seed_everything(seed):

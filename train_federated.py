@@ -1,6 +1,5 @@
 import random
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -8,7 +7,7 @@ from tqdm import tqdm
 from dataloader import MovielensDatasetLoader
 from server_model import ServerNeuralCollaborativeFiltering
 from train_single import NCFTrainer
-from utils import Utils, seed_everything
+from utils import Utils, seed_everything, plot_progress
 
 
 class FederatedNCF:
@@ -92,33 +91,17 @@ class FederatedNCF:
             self.extract_item_models()
             self.utils.federate()
 
-        epochs = np.arange(1, self.aggregation_epochs + 1)
-        hrs = np.mean(self.hrs, axis=1)
-        loss = np.mean(self.loss, axis=1)
-        ndcg = np.mean(self.ndcg, axis=1)
-
-        fig, axs = plt.subplots(1, 3, figsize=(15, 5))
-
-        axs[0].plot(epochs, hrs)
-        axs[0].set_xlabel('epochs')
-        axs[0].set_ylabel('HR@10')
-
-        axs[1].plot(epochs, loss)
-        axs[1].set_xlabel('epochs')
-        axs[1].set_ylabel('MSE')
-
-        axs[2].plot(epochs, ndcg)
-        axs[2].set_xlabel('epochs')
-        axs[2].set_ylabel('NDCG@10')
-        fig.suptitle(f'Seed = {self.seed}', fontsize=30)
-
-        plt.show()
+        progress = {
+            "hit_ratio@10": np.mean(self.hrs, axis=1),
+            "loss": np.mean(self.loss, axis=1),
+            "ndcg@10": np.mean(self.ndcg, axis=1)
+        }
+        plot_progress(progress, title=f"120 Client, Seed = {self.seed}", loss="MSE")
 
 
 if __name__ == '__main__':
-    dataloader = MovielensDatasetLoader()
-
-    seeds = {117623077, 204110176}
+    dataloader = MovielensDatasetLoader(thresh=1)
+    seeds = {117623077}  # , 117623077}  # , 204110176}
     # 187372311, 129995678,
     # 6155814, 22612812, 61168821,
     # 21228945, 146764631, 94412880,
@@ -128,7 +111,7 @@ if __name__ == '__main__':
                             num_clients=120,
                             user_per_client_range=[1, 10],
                             mode="ncf",
-                            aggregation_epochs=300,
+                            aggregation_epochs=100,
                             local_epochs=2,
                             batch_size=128,
                             latent_dim=12,

@@ -4,6 +4,7 @@ import torch
 from dataloader import MovielensDatasetLoader
 from metrics import compute_metrics
 from model import NeuralCollaborativeFiltering
+from utils import plot_progress, seed_everything
 
 
 class MatrixLoader:
@@ -61,7 +62,7 @@ class NCFTrainer:
     def train_batch(self, x, y, optimizer):
         y_ = self.ncf(x)
         mask = (y > 0).float()
-        loss = torch.nn.functional.mse_loss(y_ * mask, y)
+        loss = torch.nn.functional.mse_loss(y_, y)
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -122,7 +123,10 @@ class NCFTrainer:
 
 
 if __name__ == '__main__':
+    seed_everything(0)
     dataloader = MovielensDatasetLoader()
-    trainer = NCFTrainer(dataloader.ratings[:50], epochs=20, batch_size=128)
+    users = 50
+    trainer = NCFTrainer(dataloader.ratings[:users], epochs=20, batch_size=128)
     ncf_optimizer = torch.optim.Adam(trainer.ncf.parameters(), lr=5e-4)
     _, progress = trainer.train(ncf_optimizer, return_progress=True)
+    plot_progress(progress, f"{users} Users on 1 Client", "MSE")
