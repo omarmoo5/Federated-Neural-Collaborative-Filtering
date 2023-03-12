@@ -7,9 +7,9 @@ from model import NeuralCollaborativeFiltering
 
 
 class MatrixLoader:
-    def __init__(self, ui_matrix, default=None, seed=0):
-        np.random.seed(seed)
+    def __init__(self, ui_matrix, default=None, seed=0, latest_item=None):
         self.ui_matrix = ui_matrix
+        self.latest_item = latest_item
         self.positives = np.argwhere(self.ui_matrix != 0)
         self.negatives = np.argwhere(self.ui_matrix == 0)
         if default is None:
@@ -42,26 +42,35 @@ class MatrixLoader:
         except:
             return torch.tensor(self.default[0]), torch.tensor(self.default[1]).float()
 
+    def get_test_batch(self):
+        pos = np.array([0, self.latest_item])
+        neg_indexes = np.random.choice(self.negatives.shape[0], 99)
+        neg = self.negatives[neg_indexes]
+        batch = np.concatenate((pos.reshape(1, -1), neg), axis=0)
+        return torch.tensor(batch)
+
 
 class NCFTrainer:
-    def __init__(self, ui_matrix, epochs, batch_size, latent_dim=32, device=None):
+    def __init__(self, ui_matrix, epochs, batch_size, latent_dim=32,
+                 latest_item=None,
+                 device=None):
         self.ui_matrix = ui_matrix
         self.epochs = epochs
         self.latent_dim = latent_dim
         self.batch_size = batch_size
         self.loader = None
+        self.latest_item = latest_item
         self.initialize_loader()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.ncf = NeuralCollaborativeFiltering(self.ui_matrix.shape[0], self.ui_matrix.shape[1], self.latent_dim).to(
             self.device)
 
     def initialize_loader(self):
-        self.loader = MatrixLoader(self.ui_matrix)
+        self.loader = MatrixLoader(self.ui_matrix, latest_item=self.latest_item)
 
     def train_batch(self, x, y, optimizer):
         y_ = self.ncf(x)
-        mask = (y > 0).float()
-        loss = torch.nn.functional.mse_loss(y_ * mask, y)
+        loss = torch.nn.functional.binary_cross_entropy(y_, y)
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -90,7 +99,8 @@ class NCFTrainer:
             x, y = x.int(), y.float()
             x, y = x.to(self.device), y.to(self.device)
             loss, y_ = self.train_batch(x, y, optimizer)
-            hr, ndcg = compute_metrics(y.cpu().numpy(), y_.cpu().numpy())
+            test_batch = self.loader.get_test_batch()
+            hr, ndcg = compute_metrics(model=self.ncf, test_batch=test_batch)
             running_loss += loss
             running_hr += hr
             running_ndcg += ndcg

@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import torch
 from tqdm import tqdm
 
+import utils
 from dataloader import MovielensDatasetLoader
 from server_model import ServerNeuralCollaborativeFiltering
 from train_single import NCFTrainer
@@ -68,9 +69,9 @@ def federate(utils):
 
 class FederatedNCF:
     def __init__(self, ui_matrix, num_clients=50, user_per_client_range=[1, 5], mode="ncf", aggregation_epochs=50,
-                 local_epochs=10, batch_size=128, latent_dim=32, seed=0):
-        random.seed(seed)
+                 local_epochs=10, batch_size=128, latent_dim=32, seed=0, latest_items={}):
         self.ui_matrix = ui_matrix
+        self.latest_items = latest_items
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.num_clients = num_clients
         self.latent_dim = latent_dim
@@ -92,7 +93,8 @@ class FederatedNCF:
         for i in range(self.num_clients):
             users = random.randint(self.user_per_client_range[0], self.user_per_client_range[1])
             clients.append(NCFTrainer(self.ui_matrix[start_index:start_index + users], epochs=self.local_epochs,
-                                      batch_size=self.batch_size))
+                                      batch_size=self.batch_size,
+                                      latest_item=self.latest_items[start_index]["item_id"]))
             start_index += users
         return clients
 
@@ -159,14 +161,16 @@ class FederatedNCF:
 
 
 if __name__ == '__main__':
+    utils.seed_everything(17)
     dataloader = MovielensDatasetLoader()
     fncf = FederatedNCF(dataloader.ratings,
                         num_clients=120,
-                        user_per_client_range=[1, 10],  # Why ?
+                        user_per_client_range=[1, 1],
                         mode="ncf",
                         aggregation_epochs=400,
                         local_epochs=2,
                         batch_size=128,
-                        # latent_dim=12
+                        latent_dim=12,
+                        latest_items=dataloader.latest
                         )
     fncf.train()
