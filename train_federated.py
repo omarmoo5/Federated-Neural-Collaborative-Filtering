@@ -12,7 +12,7 @@ from utils import Utils, seed_everything, plot_progress
 
 class FederatedNCF:
     def __init__(self,
-                 ui_matrix,
+                 data_loader: MovielensDatasetLoader,
                  num_clients=50,
                  user_per_client_range=(1, 5),
                  mode="ncf",
@@ -23,7 +23,8 @@ class FederatedNCF:
                  seed=0):
         self.seed = seed
         seed_everything(seed)
-        self.ui_matrix = ui_matrix
+        self.data_loader = data_loader
+        self.ui_matrix = self.data_loader.ratings
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.num_clients = num_clients
         self.latent_dim = latent_dim
@@ -44,7 +45,8 @@ class FederatedNCF:
         clients = []
         for i in range(self.num_clients):
             users = random.randint(self.user_per_client_range[0], self.user_per_client_range[1])
-            clients.append(NCFTrainer(ui_matrix=self.ui_matrix[start_index:start_index + users],
+            clients.append(NCFTrainer(user_ids=list(range(start_index, start_index + users)),
+                                      data_loader=self.data_loader,
                                       epochs=self.local_epochs,
                                       batch_size=self.batch_size,
                                       latent_dim=self.latent_dim))
@@ -107,14 +109,15 @@ if __name__ == '__main__':
     # 21228945, 146764631, 94412880,
     # }
     for s in seeds:
-        fncf = FederatedNCF(ui_matrix=dataloader.ratings,
-                            num_clients=120,
-                            user_per_client_range=[1, 10],
-                            mode="ncf",
-                            aggregation_epochs=400,
-                            local_epochs=2,
-                            batch_size=128,
-                            latent_dim=12,
-                            seed=s
-                            )
+        fncf = FederatedNCF(
+            data_loader=dataloader,
+            num_clients=120,
+            user_per_client_range=[1, 10],
+            mode="ncf",
+            aggregation_epochs=400,
+            local_epochs=2,
+            batch_size=128,
+            latent_dim=12,
+            seed=s
+        )
         fncf.train()

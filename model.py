@@ -53,7 +53,10 @@ class NeuralCollaborativeFiltering(torch.nn.Module):
         user_id, item_id = x[:, 0], x[:, 1]
         gmf_product = self.gmf_forward(user_id, item_id)
         mlp_output = self.mlp_forward(user_id, item_id)
-        return self.output_logits(torch.cat([gmf_product, mlp_output], dim=1)).view(-1)
+        concat = torch.cat([gmf_product, mlp_output], dim=1)
+        output_logits = self.output_logits(concat)
+        output_scores = torch.sigmoid(output_logits)
+        return output_scores.view(-1)
 
     def gmf_forward(self, user_id, item_id):
         user_emb = self.gmf_user_embeddings(user_id)

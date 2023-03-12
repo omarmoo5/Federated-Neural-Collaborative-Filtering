@@ -1,3 +1,4 @@
+import datetime
 import os
 
 import numpy as np
@@ -8,11 +9,11 @@ class MovielensDatasetLoader:
                  npy_file='./ml-1m/ratings.npy',
                  num_movies=None,
                  num_users=None,
-                 thresh=None):
+                 thresh=1):
         self.filename = filename
         self.npy_file = npy_file
         self.thresh = thresh
-        self.rating_tuples = self.read_ratings()
+        self.rating_tuples, self.latest_ratings = self.read_ratings_file()
         if num_users is None:
             self.num_users = np.max(self.rating_tuples.T[0])
         else:
@@ -28,8 +29,28 @@ class MovielensDatasetLoader:
         data = np.array([[int(i) for i in rating[:-1].split("::")[:-1]] for rating in ratings])
         return data
 
+    def read_ratings_file(self):
+        latest_ratings = {}
+        data = []
+        with open(self.filename, 'r') as f:
+            for line in f:
+                user_id, movie_id, rating, timestamp = map(int, line.strip().split("::"))
+                timestamp = datetime.datetime.fromtimestamp(timestamp)
+                data.append([user_id, movie_id, rating])
+                user_id -= 1
+                if user_id not in latest_ratings or timestamp > latest_ratings[user_id]["timestamp"]:
+                    latest_ratings[user_id] = {"item_id": movie_id - 1,
+                                               "timestamp": timestamp
+                                               }
+        data = np.array(data)
+        return data, latest_ratings
+
     def generate_ui_matrix(self):
         data = np.zeros((self.num_users, self.num_movies))
+        # TODO : get and remove the latest item from the train -> get the latest and remove it from train dataset
+        # TODO : generate the testing iter : 99 -ve + 1 latest
+        # TODO : evaluation metrics
+        # TODO : add sigmoid and make the loss BCE
         for rating in self.rating_tuples:
             data[rating[0] - 1][rating[1] - 1] = (rating[2] >= self.thresh).astype(np.int_) if self.thresh else rating[
                 2]
@@ -43,6 +64,9 @@ class MovielensDatasetLoader:
             np.save(self.npy_file, ratings)
         return np.load(self.npy_file)
 
+    def get_ui_matrix(self, user_ids):
+        return self.ratings[user_ids]
+
     def __str__(self) -> str:
         return f"MovieLens1M DataLoader\n" \
                f"Number of Users: {self.num_users}\n" \
@@ -51,6 +75,7 @@ class MovielensDatasetLoader:
 
 
 if __name__ == '__main__':
-    dataloader = MovielensDatasetLoader(thresh=2)
+    dataloader = MovielensDatasetLoader()
     print(dataloader)
+    print(dataloader.get_ui_matrix([0, 1, 2]))
     print(dataloader.ratings)
