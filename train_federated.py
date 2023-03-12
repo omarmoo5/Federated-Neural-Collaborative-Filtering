@@ -170,7 +170,7 @@ if __name__ == '__main__':
                         aggregation_epochs=400,
                         local_epochs=2,
                         batch_size=128,
-                        latent_dim=12,
+                        # latent_dim=12,
                         latest_items=dataloader.latest
                         )
     fncf.train()

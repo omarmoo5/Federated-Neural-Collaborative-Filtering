@@ -2,60 +2,63 @@ import torch
 
 
 class NeuralCollaborativeFiltering(torch.nn.Module):
-    def __init__(self, user_num, item_num, predictive_factor=12):
-        """
-        Initializes the layers of the model.
-        Parameters:
-            user_num (int): The number of users in the dataset.
-            item_num (int): The number of items in the dataset.
-            predictive_factor (int, optional): The latent dimension of the model. Default is 12.
-        """
+    def __init__(self, user_num, item_num, predictive_factor=32):
         super(NeuralCollaborativeFiltering, self).__init__()
-        # Initialize user and item latent vectors for MLP and GMF
-        self.mlp_user_embeddings = torch.nn.Embedding(num_embeddings=user_num, embedding_dim=predictive_factor)
-        self.mlp_item_embeddings = torch.nn.Embedding(num_embeddings=item_num, embedding_dim=predictive_factor)
-        self.gmf_user_embeddings = torch.nn.Embedding(num_embeddings=user_num, embedding_dim=predictive_factor)
-        self.gmf_item_embeddings = torch.nn.Embedding(num_embeddings=item_num, embedding_dim=predictive_factor)
-        # Linear layer of GMF that we will feed with the mul(user_emb, item_emb),
-        # it will output the predicted scores from GMF
-        self.gmf_out = torch.nn.Linear(predictive_factor, 1)
-        self.gmf_out.weight = torch.nn.Parameter(torch.ones(1, predictive_factor))
+        # initialize the layers of the model
 
-        # Linear layers of MLP model that we will pass the concatenation of the user and item latent vectors to
-        self.mlp = torch.nn.Sequential(
-            torch.nn.Linear(2 * predictive_factor, 48), torch.nn.ReLU(),
-            torch.nn.Linear(48, 24), torch.nn.ReLU(),
-            torch.nn.Linear(24, 12), torch.nn.ReLU(),
-            torch.nn.Linear(12, 6), torch.nn.ReLU()
-        )
-        # Linear layer of MLP
-        self.mlp_out = torch.nn.Linear(6, 1)
-        # Contains the output of the GMF concatenated with MLP
+        """"
+        Initialize user latent vectors for MLP and GMF and user latent vectors for MLP and GMF
+        Num_embeddings: This represents the size of the dictionary present in the embeddings, and it is represented in integers.
+        Embedding_dim: This represents the size of each vector present in the embeddings, which is represented in integers.
+        """""
+        self.mlp_user_embeddings = torch.nn.Embedding(num_embeddings=user_num, embedding_dim=2 * predictive_factor)
+        self.mlp_item_embeddings = torch.nn.Embedding(num_embeddings=item_num, embedding_dim=2 * predictive_factor)
+        self.gmf_user_embeddings = torch.nn.Embedding(num_embeddings=user_num, embedding_dim=2 * predictive_factor)
+        self.gmf_item_embeddings = torch.nn.Embedding(num_embeddings=item_num, embedding_dim=2 * predictive_factor)
+
+        """" linear Layers of MLP Model which we will pass the concatenation of the user and item latent vectors to"""
+        self.mlp = torch.nn.Sequential(torch.nn.Linear(4 * predictive_factor, 2 * predictive_factor),
+                                       torch.nn.ReLU(),
+                                       torch.nn.Linear(2 * predictive_factor, predictive_factor),
+                                       torch.nn.ReLU(),
+                                       torch.nn.Linear(predictive_factor, predictive_factor // 2),
+                                       torch.nn.ReLU()
+                                       )
+
+        """Linear layer of GMF that we will feed with the mul(user_emb, item_emb), it will output the predicted 
+        scores from GMF """
+        self.gmf_out = torch.nn.Linear(2 * predictive_factor, 1)
+        # Initialize the parameters
+        self.gmf_out.weight = torch.nn.Parameter(torch.ones(1, 2 * predictive_factor))
+        """Linear layer of MLP """
+        self.mlp_out = torch.nn.Linear(predictive_factor // 2, 1)
+        """ Will contain the output of the GMF concatenated with MLP"""
         self.output_logits = torch.nn.Linear(predictive_factor, 1)
-        # Percentage of each model in the final output
+        """ percentage of each model in the final output"""
         self.model_blending = 0.5  # alpha parameter, equation 13 in the paper
 
         self.initialize_weights()
         self.join_output_weights()
 
     def initialize_weights(self):
-        """Initializes the weight parameters using Xavier initialization."""
-        torch.nn.init.xavier_uniform_(self.mlp_user_embeddings.weight)
-        torch.nn.init.xavier_uniform_(self.mlp_item_embeddings.weight)
-        torch.nn.init.xavier_uniform_(self.gmf_user_embeddings.weight)
-        torch.nn.init.xavier_uniform_(self.gmf_item_embeddings.weight)
-        torch.nn.init.xavier_uniform_(self.gmf_out.weight)
-        torch.nn.init.xavier_uniform_(self.mlp_out.weight)
-        torch.nn.init.xavier_uniform_(self.output_logits.weight)
+        torch.nn.init.normal_(self.mlp_user_embeddings.weight, std=0.01)
+        torch.nn.init.normal_(self.mlp_item_embeddings.weight, std=0.01)
+        torch.nn.init.normal_(self.gmf_user_embeddings.weight, std=0.01)
+        torch.nn.init.normal_(self.gmf_item_embeddings.weight, std=0.01)
+        for layer in self.mlp:
+            if isinstance(layer, torch.nn.Linear):
+                torch.nn.init.xavier_uniform_(layer.weight)
+
+        # Fills the input layer parameters with ones
+        torch.nn.init.kaiming_uniform_(self.gmf_out.weight, a=1)
+        torch.nn.init.kaiming_uniform_(self.mlp_out.weight, a=1)
 
     def forward(self, x):
         user_id, item_id = x[:, 0], x[:, 1]
         gmf_product = self.gmf_forward(user_id, item_id)
         mlp_output = self.mlp_forward(user_id, item_id)
-        concat = torch.cat([gmf_product, mlp_output], dim=1)
-        output_logits = self.output_logits(concat)
-        output_scores = torch.sigmoid(output_logits)
-        return output_scores.view(-1)
+        logits = self.output_logits(torch.cat([gmf_product, mlp_output], dim=1))
+        return torch.sigmoid(logits).view(-1)
 
     def gmf_forward(self, user_id, item_id):
         user_emb = self.gmf_user_embeddings(user_id)
@@ -74,8 +77,8 @@ class NeuralCollaborativeFiltering(torch.nn.Module):
         self.output_logits.weight = W
 
     def layer_setter(self, model, model_copy):
-        model_state_dict = model.state_dict()
-        model_copy.load_state_dict(model_state_dict)
+        for m, mc in zip(model.parameters(), model_copy.parameters()):
+            mc.data[:] = m.data[:]
 
     def load_server_weights(self, server_model):
         self.layer_setter(server_model.mlp_item_embeddings, self.mlp_item_embeddings)
