@@ -51,7 +51,7 @@ class MatrixLoader:
 
 
 class NCFTrainer:
-    def __init__(self, ui_matrix, epochs, batch_size, latent_dim=32,
+    def __init__(self, ui_matrix, epochs, batch_size, latent_dim=12,
                  latest_item=None,
                  device=None):
         self.ui_matrix = ui_matrix

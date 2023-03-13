@@ -1,7 +1,7 @@
 import copy
 import random
 
-import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from tqdm import tqdm
 
@@ -70,6 +70,7 @@ def federate(utils):
 class FederatedNCF:
     def __init__(self, ui_matrix, num_clients=50, user_per_client_range=[1, 5], mode="ncf", aggregation_epochs=50,
                  local_epochs=10, batch_size=128, latent_dim=32, seed=0, latest_items={}):
+        self.seed = seed
         self.ui_matrix = ui_matrix
         self.latest_items = latest_items
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -139,38 +140,30 @@ class FederatedNCF:
             self.extract_item_models()
             federate(self.utils)
 
-        epochs = range(1, self.aggregation_epochs + 1)
-
-        hrs = [sum(i) / len(i) for i in self.hrs]
-        plt.plot(epochs, hrs)
-        plt.xlabel('epochs')
-        plt.ylabel('HR@10')
-        plt.show()
-
-        loss = [sum(i) / len(i) for i in self.loss]
-        plt.plot(epochs, loss)
-        plt.xlabel('epochs')
-        plt.ylabel('Mean Square Error')
-        plt.show()
-
-        ndcg = [sum(i) / len(i) for i in self.ndcg]
-        plt.plot(epochs, ndcg)
-        plt.xlabel('epochs')
-        plt.ylabel('NDCG@10')
-        plt.show()
+        progress = {
+            "hit_ratio@10": np.mean(self.hrs, axis=1),
+            "loss": np.mean(self.loss, axis=1),
+            "ndcg@10": np.mean(self.ndcg, axis=1)
+        }
+        utils.plot_progress(progress, title=f"{self.num_clients} User, Seed = {self.seed}", loss="BCE")
 
 
 if __name__ == '__main__':
-    utils.seed_everything(17)
+    seed = 5785241
     dataloader = MovielensDatasetLoader()
-    fncf = FederatedNCF(dataloader.ratings,
-                        num_clients=120,
-                        user_per_client_range=[1, 1],
-                        mode="ncf",
-                        aggregation_epochs=400,
-                        local_epochs=2,
-                        batch_size=128,
-                        # latent_dim=12,
-                        latest_items=dataloader.latest
-                        )
-    fncf.train()
+    for seed in [117623077, 204110176, 187372311,
+                 129995678, 6155814, 22612812, 61168821,
+                 21228945, 146764631, 94412880]:
+        utils.seed_everything(seed)
+        fncf = FederatedNCF(dataloader.ratings,
+                            num_clients=600,
+                            user_per_client_range=[1, 1],
+                            mode="ncf",
+                            aggregation_epochs=200,
+                            local_epochs=2,
+                            batch_size=128,
+                            latent_dim=12,
+                            latest_items=dataloader.latest,
+                            seed=seed
+                            )
+        fncf.train()
